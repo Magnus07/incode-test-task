@@ -5,6 +5,7 @@ var UserSchema = new Schema({
   username: String,
   password: String,
   subordinates: Array,
+  salt: String,
 });
 
 UserSchema.plugin(require("mongoose-role"), {

@@ -4,6 +4,9 @@ var path = require("path");
 var cookieParser = require("cookie-parser");
 var logger = require("morgan");
 const mongoose = require("mongoose");
+const session = require("express-session");
+const MongoStore = require("connect-mongo");
+var passport = require("passport");
 
 require("dotenv").config();
 
@@ -21,6 +24,18 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, "public")));
+
+app.use(
+  session({
+    secret: process.env.SESSION_SECRET,
+    resave: false,
+    saveUninitialized: false,
+    cookie: { maxAge: 1000 * 60 * 60 * 24 * 7 },
+    store: MongoStore.create({
+      mongoUrl: process.env.DB_CONNECT_URL,
+    }),
+  })
+);
 
 app.use("/", indexRouter);
 app.use("/users", usersRouter);
@@ -40,8 +55,27 @@ app.use(function (err, req, res, next) {
   res.status(err.status || 500);
   res.render("error");
 });
+// app.use(passport.authenticate("session"));
+
+require("./auth/passport");
 
 mongoose.connect(process.env.DB_CONNECT_URL);
+
+app.use(passport.initialize());
+
+passport.serializeUser(function (user, cb) {
+  process.nextTick(function () {
+    return cb(null, {
+      username: user.username,
+    });
+  });
+});
+
+passport.deserializeUser(function (user, cb) {
+  process.nextTick(function () {
+    return cb(null, user);
+  });
+});
 
 console.log("connection successful");
 
