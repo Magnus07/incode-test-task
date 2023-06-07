@@ -11,16 +11,38 @@ module.exports = {
    * UserController.list()
    */
   list: function (req, res) {
-    UserModel.find(function (err, Users) {
-      if (err) {
-        return res.status(500).json({
-          message: "Error when getting User.",
-          error: err,
-        });
+    UserModel.findOne(
+      { username: req.session.user.username },
+      function (err, User) {
+        if (err) {
+          return res.status(500).json({
+            message: "Error when getting User.",
+            error: err,
+          });
+        }
+        switch (User.role) {
+          case "user":
+            return res.json(User);
+          case "boss":
+            return res.json("I'm a boss!");
+          case "admin":
+            UserModel.find(function (err, Users) {
+              if (err) {
+                return res.status(500).json({
+                  message: "Error when getting User.",
+                  error: err,
+                });
+              }
+              return res.json(Users);
+            });
+            break;
+          default:
+            return res
+              .status(500)
+              .json({ message: "Something went wrong. Can't get your role" });
+        }
       }
-      console.log(req.session);
-      return res.json(Users);
-    });
+    );
   },
 
   /**
@@ -160,7 +182,6 @@ module.exports = {
       username: req.body.username,
       password: hashedPassword,
       subordinates: [],
-      salt: salt,
       role: "user",
     });
     user.save(function (err) {
@@ -178,5 +199,20 @@ module.exports = {
         res.redirect("/");
       });
     });
+  },
+
+  /**
+   * UserController.logout()
+   */
+  logout: function (req, res) {
+    req.session.destroy();
+    res.status(200).json("Logged out");
+  },
+
+  /**
+   * UserController.addSubordinate()
+   */
+  addSubordinate: function (req, res) {
+    res.status(200).json("Add subordinate");
   },
 };

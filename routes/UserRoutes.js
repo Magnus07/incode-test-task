@@ -1,10 +1,12 @@
 var express = require("express");
 var router = express.Router();
 var UserController = require("../controllers/UserController.js");
+const { requireAuth, isBoss } = require("../utils/middlewares.js");
+
 /*
  * GET
  */
-router.get("/", UserController.list);
+router.get("/", requireAuth, UserController.list);
 
 /*
  * GET
@@ -35,5 +37,15 @@ router.post("/login/password", UserController.login);
  * SIGN UP
  */
 router.post("/signup/password", UserController.signup);
+
+/*
+ * LOGOUT
+ */
+router.post("/logout", UserController.logout);
+
+/*
+ * ADD SUBORDINATE
+ */
+router.post("/subordinates/add", isBoss, UserController.addSubordinate);
 
 module.exports = router;
