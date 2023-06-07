@@ -16,7 +16,7 @@ router.get("/:id", UserController.show);
 /*
  * POST
  */
-router.post("/", UserController.create);
+router.post("/", requireAuth, UserController.create);
 
 /*
  * PUT
@@ -47,5 +47,10 @@ router.post("/logout", UserController.logout);
  * ADD SUBORDINATE
  */
 router.post("/subordinates/add", isBoss, UserController.addSubordinate);
+
+/*
+ * FIND RECURSIVELY
+ */
+router.post("/find", requireAuth, UserController.findRecursively);
 
 module.exports = router;

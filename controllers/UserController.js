@@ -72,11 +72,15 @@ module.exports = {
   /**
    * UserController.create()
    */
-  create: function (req, res) {
+  create: async function (req, res) {
+    const salt = await bcrypt.genSalt(10);
+
+    const hashedPassword = await bcrypt.hash(req.body.password, salt);
+
     var User = new UserModel({
       username: req.body.username,
-      password: req.body.password,
-      subordinates: req.body.subordinates,
+      password: hashedPassword,
+      parent: req.session.user._id,
     });
 
     User.save(function (err, User) {
@@ -87,7 +91,20 @@ module.exports = {
         });
       }
 
-      return res.status(201).json(User);
+      UserModel.findByIdAndUpdate(
+        req.session.user._id,
+        { $push: { subordinates: User._id } },
+        function (err, ParentUser) {
+          if (err) {
+            return res.status(500).json({
+              message:
+                "Error when updating subordinates for " + ParentUser.username,
+              error: err,
+            });
+          }
+          return res.status(201).json(ParentUser);
+        }
+      );
     });
   },
 
@@ -214,5 +231,18 @@ module.exports = {
    */
   addSubordinate: function (req, res) {
     res.status(200).json("Add subordinate");
+  },
+
+  /**
+   * UserController.findRecursively()
+   */
+  findRecursively: async function (req, res) {
+    let users = await UserModel.findOne({
+      username: req.session.user.username,
+    }).populate({
+      path: "subordinates",
+      populate: { path: "subordinates" },
+    });
+    res.status(200).json(users);
   },
 };
