@@ -10,63 +10,11 @@ module.exports = {
   /**
    * UserController.list()
    */
-  list: function (req, res) {
-    UserModel.findOne(
-      { username: req.session.user.username },
-      function (err, User) {
-        if (err) {
-          return res.status(500).json({
-            message: "Error when getting User.",
-            error: err,
-          });
-        }
-        switch (User.role) {
-          case "user":
-            return res.json(User);
-          case "boss":
-            return res.json("I'm a boss!");
-          case "admin":
-            UserModel.find(function (err, Users) {
-              if (err) {
-                return res.status(500).json({
-                  message: "Error when getting User.",
-                  error: err,
-                });
-              }
-              return res.json(Users);
-            });
-            break;
-          default:
-            return res
-              .status(500)
-              .json({ message: "Something went wrong. Can't get your role" });
-        }
-      }
-    );
-  },
-
-  /**
-   * UserController.show()
-   */
-  show: function (req, res) {
-    var id = req.params.id;
-
-    UserModel.findOne({ _id: id }, function (err, User) {
-      if (err) {
-        return res.status(500).json({
-          message: "Error when getting User.",
-          error: err,
-        });
-      }
-
-      if (!User) {
-        return res.status(404).json({
-          message: "No such User",
-        });
-      }
-
-      return res.json(User);
+  list: async function (req, res) {
+    let users = await UserModel.findOne({
+      username: req.session.user.username,
     });
+    res.status(200).json(users);
   },
 
   /**
@@ -74,13 +22,19 @@ module.exports = {
    */
   create: async function (req, res) {
     const salt = await bcrypt.genSalt(10);
-
-    const hashedPassword = await bcrypt.hash(req.body.password, salt);
+    let hashedPassword;
+    try {
+      hashedPassword = await bcrypt.hash(req.body.password, salt);
+    } catch {
+      return res.status(500).json({
+        message: "Password should be provided!",
+      });
+    }
 
     var User = new UserModel({
       username: req.body.username,
       password: hashedPassword,
-      parent: req.session.user._id,
+      parent: req.session.user,
     });
 
     User.save(function (err, User) {
@@ -102,66 +56,9 @@ module.exports = {
               error: err,
             });
           }
-          return res.status(201).json(ParentUser);
+          return res.status(201).json(User);
         }
       );
-    });
-  },
-
-  /**
-   * UserController.update()
-   */
-  update: function (req, res) {
-    var id = req.params.id;
-
-    UserModel.findOne({ _id: id }, function (err, User) {
-      if (err) {
-        return res.status(500).json({
-          message: "Error when getting User",
-          error: err,
-        });
-      }
-
-      if (!User) {
-        return res.status(404).json({
-          message: "No such User",
-        });
-      }
-
-      User.username = req.body.username ? req.body.username : User.username;
-      User.password = req.body.password ? req.body.password : User.password;
-      User.subordinates = req.body.subordinates
-        ? req.body.subordinates
-        : User.subordinates;
-
-      User.save(function (err, User) {
-        if (err) {
-          return res.status(500).json({
-            message: "Error when updating User.",
-            error: err,
-          });
-        }
-
-        return res.json(User);
-      });
-    });
-  },
-
-  /**
-   * UserController.remove()
-   */
-  remove: function (req, res) {
-    var id = req.params.id;
-
-    UserModel.findByIdAndRemove(id, function (err, User) {
-      if (err) {
-        return res.status(500).json({
-          message: "Error when deleting the User.",
-          error: err,
-        });
-      }
-
-      return res.status(204).json();
     });
   },
 
@@ -219,30 +116,75 @@ module.exports = {
   },
 
   /**
-   * UserController.logout()
+   * UserController.changeBoss()
    */
-  logout: function (req, res) {
-    req.session.destroy();
-    res.status(200).json("Logged out");
-  },
-
-  /**
-   * UserController.addSubordinate()
-   */
-  addSubordinate: function (req, res) {
-    res.status(200).json("Add subordinate");
-  },
-
-  /**
-   * UserController.findRecursively()
-   */
-  findRecursively: async function (req, res) {
+  changeBoss: async function (req, res) {
     let users = await UserModel.findOne({
       username: req.session.user.username,
-    }).populate({
-      path: "subordinates",
-      populate: { path: "subordinates" },
     });
-    res.status(200).json(users);
+
+    // if change itself
+    if (req.session.user.username === req.body.makeSubordinate) {
+      return res
+        .status(406)
+        .json({ message: "You can change boss only to your subordinates!" });
+    }
+
+    // recursive lookup for usernames in retirned document
+    function searchJSON(obj, key) {
+      let results = [];
+      results.push(obj[key]);
+      if (obj.subordinates !== undefined) {
+        for (let item of obj["subordinates"]) {
+          results = results.concat(searchJSON(item, key));
+        }
+      }
+      return results;
+    }
+    let subordinates = searchJSON(users, "username");
+
+    let makeBossDoc;
+    let oldParent;
+
+    // if boss can reach its subordinates
+    if (
+      subordinates.includes(req.body.makeSubordinate) &&
+      subordinates.includes(req.body.makeBoss)
+    ) {
+      makeBossDoc = await UserModel.findOne({
+        username: req.body.makeBoss,
+      }).exec();
+      let makeSubordinateDoc = await UserModel.findOne({
+        username: req.body.makeSubordinate,
+      }).exec();
+      oldParent = await UserModel.findOne({
+        _id: makeSubordinateDoc.parent,
+      }).exec();
+
+      // if we're swaping documents
+      if (makeBossDoc.parent.equals(makeSubordinateDoc._id)) {
+        oldParent.subordinates.push(makeBossDoc);
+        makeBossDoc.parent = oldParent;
+      }
+
+      // change "pointers"
+      makeBossDoc.subordinates.push(makeSubordinateDoc);
+      makeSubordinateDoc.parent = makeBossDoc;
+      makeSubordinateDoc.subordinates = makeSubordinateDoc.subordinates.filter(
+        (item) => !item._id.equals(makeBossDoc._id)
+      );
+
+      oldParent.subordinates = oldParent.subordinates.filter(
+        (item) => !item._id.equals(makeSubordinateDoc._id)
+      );
+
+      await oldParent.save();
+      await makeBossDoc.save();
+      await makeSubordinateDoc.save();
+    } else {
+      res.status(403).json({ message: "Forbidden." });
+    }
+
+    res.status(200).json({ message: "Successful." });
   },
 };
